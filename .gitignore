@@ -1,0 +1,27 @@
+# Python kalıntıları
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+env/
+
+# Ortam değişkenleri (GÜVENLİK İÇİN KRİTİK)
+.env
+.env.local
+.env.dev
+.env.prod
+
+# Docker
+.docker/
+# docker-compose.override.yml (isteğe bağlı)
+
+# VS Code ve Sistem
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Backend özel kütüphane klasörleri
+backend/build/
+backend/dist/
+backend/*.egg-info/
