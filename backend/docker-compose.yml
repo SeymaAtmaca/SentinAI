@@ -1,72 +1,119 @@
-version: "3.9"
 
 services:
+  # PostgreSQL - Multi-Tenant Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: mg-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-mgadmin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme123}
+      POSTGRES_DB: modelguardian
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mgadmin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [mg-network]
+
+  # Redis - Cache & Session Management
+  redis:
+    image: redis:7-alpine
+    container_name: mg-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme123}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme123}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks: [mg-network]
+
+  # Apache Kafka - Event Streaming
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: mg-kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks: [mg-network]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: mg-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks: [mg-network]
+
+  # FastAPI Backend
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mg-api-dev
+    container_name: mg-api
     restart: unless-stopped
     ports:
-      - "8001:8000"          # 🔑 Çakışma çözüldü: Host 8001 → Container 8000
+      - "8001:8000"
     env_file: .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-passpostgre34}@db:5432/modelguardian
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-passredis34}@redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-mgadmin}:${DB_PASSWORD:-changeme123}@postgres:5432/modelguardian
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme123}@redis:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - APP_ENV=development
     depends_on:
-      db: { condition: service_healthy }
-      redis: { condition: service_healthy }
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
       timeout: 5s
       retries: 5
-    deploy:
-      resources:
-        limits: { cpus: "2.0", memory: 1G }
-        reservations: { cpus: "0.5", memory: 256M }
-    networks: [mg-net]
+    volumes:
+      - ./src:/app/src
+    networks: [mg-network]
+    command: uvicorn src.presentation.api.main:app --host 0.0.0.0 --port 8000 --reload
 
-  db:
-    image: postgres:15-alpine
-    container_name: mg-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-passdb34}
-      POSTGRES_DB: modelguardian
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes: [pgdata:/var/lib/postgresql/data]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy: { resources: { limits: { cpus: "1.0", memory: 512M } } }
-    networks: [mg-net]
-
-  redis:
-    image: redis:7-alpine
-    container_name: mg-redis
-    restart: unless-stopped
-    command: >
-      redis-server
-      --appendonly yes
-      --requirepass ${REDIS_PASSWORD:-passredis34}
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-    volumes: [redisdata:/data]
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-passredis34}", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    networks: [mg-net]
-
+# Volume tanımları (Docker Compose v3 syntax)
 volumes:
-  pgdata: { driver: local }
-  redisdata: { driver: local }
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+  kafka_data:
+    driver: local
+  zookeeper_data:
+    driver: local
 
 networks:
-  mg-net: { driver: bridge }
+  mg-network:
+    driver: bridge
