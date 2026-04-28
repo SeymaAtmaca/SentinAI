@@ -25,3 +25,5 @@ Thumbs.db
 backend/build/
 backend/dist/
 backend/*.egg-info/
+backend/docker-compose-old.yml
+backend/src_old/

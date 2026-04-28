@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
-
+from src.infrastructure.security.tenant.isolation_middleware import TenantIsolationMiddleware
+from src.presentation.api.v1.routes import auth, tenants
 from src.infrastructure.config.settings import settings
 
 # Configure logging
@@ -49,6 +50,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register Tenant Isolation Middleware
+app.add_middleware(TenantIsolationMiddleware)
+
 # Health Check Endpoint
 @app.get("/health", tags=["System"])
 async def health_check():
@@ -62,6 +66,10 @@ async def health_check():
         "environment": settings.APP_ENV
     }
 
+app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
+# app.include_router(tenants.router, prefix=settings.API_V1_PREFIX)
+# app.include_router(models.router, prefix=settings.API_V1_PREFIX)
+
 # Root Endpoint
 @app.get("/", tags=["System"])
 async def root():
@@ -71,6 +79,7 @@ async def root():
         "health": "/health",
         "api_v1": settings.API_V1_PREFIX
     }
+
 
 if __name__ == "__main__":
     import uvicorn

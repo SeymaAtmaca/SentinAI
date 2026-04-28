@@ -1,37 +1,36 @@
+# ============================================
+# MODEL GUARDIAN AI - BACKEND DEPENDENCIES
+# Python 3.11+ | Production-Ready
+# ============================================
+
 # Core Framework
 fastapi==0.109.2
 uvicorn[standard]==0.27.1
-pydantic==2.5.3
+uvloop==0.19.0; sys_platform != 'win32'
+pydantic[email]==2.5.3
+email-validator==2.1.0.post1
 pydantic-settings==2.1.0
 
 # Database
 asyncpg==0.29.0
 SQLAlchemy[asyncio]==2.0.25
 alembic==1.13.1
-
-# Redis
 redis[hiredis]==5.0.1
 
 # Kafka
 aiokafka==0.10.0
 
-# Authentication
+# Authentication & Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 
-# Environment
+# HTTP & Utilities
+httpx[http2]==0.26.0
 python-dotenv==1.0.1
 
-# HTTP Client
-httpx==0.26.0
-
-# Testing
+# Testing & Dev
 pytest==7.4.4
 pytest-asyncio==0.23.3
-pytest-cov==4.1.0
-
-# Code Quality
 black==24.1.1
 ruff==0.1.11
-mypy==1.8.0
