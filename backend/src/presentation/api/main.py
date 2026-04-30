@@ -1,10 +1,16 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 from src.infrastructure.security.tenant.isolation_middleware import TenantIsolationMiddleware
-from src.presentation.api.v1.routes import auth, tenants
+from src.presentation.api.v1.routes import auth, tenants, test, guard
 from src.infrastructure.config.settings import settings
+# from src.core.container import Container
+
+# container = Container()
+# container.config.from_dict({
+#     "database_url": settings.DATABASE_URL,
+# })
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +24,12 @@ async def lifespan(app: FastAPI):
     """
     Application lifecycle management
     """
+    # container = Container()
+    # container.config.from_dict({
+    #     "database_url": settings.DATABASE_URL,
+    # })
+    # container.wire(modules=["src.presentation.api.v1.routes"])  # ← Wiring!
+    
     # Startup
     logger.info(f"Starting {settings.APP_NAME}...")
     logger.info(f"Environment: {settings.APP_ENV}")
@@ -29,6 +41,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info(f"Shutting down {settings.APP_NAME}...")
+    # container.unwire()
     # TODO: Add cleanup logic
 
 # Create FastAPI app
@@ -67,8 +80,11 @@ async def health_check():
     }
 
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
+app.include_router(test.router, prefix=settings.API_V1_PREFIX)
 # app.include_router(tenants.router, prefix=settings.API_V1_PREFIX)
 # app.include_router(models.router, prefix=settings.API_V1_PREFIX)
+app.include_router(guard.router, prefix=settings.API_V1_PREFIX)
+
 
 # Root Endpoint
 @app.get("/", tags=["System"])
