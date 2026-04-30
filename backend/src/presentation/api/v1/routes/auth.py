@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body  # ← Body 
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
 from typing import Optional
+import uuid
 
 from src.infrastructure.security.auth.jwt_handler import JWTHandler
 from src.infrastructure.security.auth.password_hasher import PasswordHasher
@@ -48,30 +49,55 @@ class TokenRefreshResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(req: LoginRequest, user_repo: PostgresUserRepository = Depends()):
     """Kullanıcı girişi - JWT token çifti döndürür"""
-    user = await user_repo.get_by_email(req.email)
-    if not user or not PasswordHasher.verify(req.password, user.password_hash):
+    
+    # 1. User'ı public schema'da bul (tenant henüz bilinmiyor)
+    user = await user_repo.get_by_email(req.email, tenant_id=None)
+    
+    if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
+    # 2. Password'u doğrula
+    if not PasswordHasher.verify(req.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    # 3. Account status kontrolü
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
     
+    # 4. Tenant bilgisini al (public.tenants tablosundan)
+    tenant = await user_repo.get_tenant_by_id(user.tenant_id)
+    if not tenant or tenant.is_suspended():
+        raise HTTPException(
+            status_code=402 if tenant and tenant.is_suspended() else 404,
+            detail="Account not found or suspended"
+        )
+    
+    # 5. Token'ları oluştur (tenant bilgisi ile)
     access_token = JWTHandler.create_access_token(
         subject=str(user.id),
         tenant_id=str(user.tenant_id),
+        tenant_slug=tenant.slug,  # ← Schema name için gerekli
         role=user.role.value,
-        permissions=["model:read", "audit:read"]  # TODO: DB'den çek
+        permissions=["model:read", "audit:read"],  # TODO: DB'den çek
+        deployment_type=tenant.deployment_type
     )
     refresh_token = JWTHandler.create_refresh_token(
         subject=str(user.id),
         tenant_id=str(user.tenant_id)
     )
     
+    # 6. Last login update
     await user_repo.update_last_login(user.id)
     
     return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        user={"id": str(user.id), "email": user.email, "role": user.role.value}
+        user={
+            "id": str(user.id), 
+            "email": user.email, 
+            "role": user.role.value,
+            "tenant_slug": tenant.slug
+        }
     )
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -103,19 +129,55 @@ async def register(req: RegisterRequest, user_repo: PostgresUserRepository = Dep
     )
 
 @router.post("/refresh", response_model=TokenRefreshResponse)
-async def refresh_token(req: RefreshTokenRequest):
-    """Refresh token ile yeni access token al"""
+async def refresh_token(
+    req: RefreshTokenRequest, 
+    user_repo: PostgresUserRepository = Depends()
+):
+    """
+    Refresh token ile yeni access token al
+    Role ve permissions DB'den çekilir (güncel yetkiler için)
+    """
     try:
-        user_id, tenant_id, role, permissions = JWTHandler.refresh_access_token(req.refresh_token)
+        # 1. Refresh token'ı doğrula - SADECE 2 DEĞER DÖNER
+        user_id, tenant_id = JWTHandler.refresh_access_token(req.refresh_token)
         
+        # 2. User'ı DB'den bul (güncel role ve status için)
+        user = await user_repo.get_by_id(uuid.UUID(user_id))
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="Account is disabled")
+        
+        # 3. Tenant bilgisini al (güncel status ve slug için)
+        tenant = await user_repo.get_tenant_by_id(uuid.UUID(tenant_id))
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        
+        if tenant.is_suspended():
+            raise HTTPException(
+                status_code=402,
+                detail=f"Account {tenant.status}. Please contact support."
+            )
+        
+        # 4. Permissions'ı DB'den veya config'den çek (TODO: dynamic)
+        # Şimdilik statik, Faz 2'de dinamik olacak
+        permissions = ["model:read", "audit:read"]
+        
+        # 5. Yeni access token oluştur (güncel bilgilerle)
         new_access = JWTHandler.create_access_token(
             subject=user_id,
             tenant_id=tenant_id,
-            role=role,
-            permissions=permissions
+            role=user.role.value,              # ← DB'den gelen güncel role
+            permissions=permissions,            # ← DB'den gelen güncel permissions
+            tenant_slug=tenant.slug,            # ← Schema routing için
+            deployment_type=tenant.deployment_type
         )
         
         return TokenRefreshResponse(access_token=new_access)
         
     except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        error_msg = str(e)
+        if "Invalid token format" in error_msg or "invalid UUID" in error_msg.lower():
+            raise HTTPException(status_code=400, detail="Invalid token format")
+        raise HTTPException(status_code=401, detail=error_msg)

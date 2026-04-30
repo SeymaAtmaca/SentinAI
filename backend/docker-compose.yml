@@ -114,6 +114,7 @@ volumes:
   zookeeper_data:
     driver: local
 
+
 networks:
   mg-network:
     driver: bridge

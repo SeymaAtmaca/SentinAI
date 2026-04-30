@@ -15,16 +15,18 @@ class JWTHandler:
         tenant_id: str,
         role: str,
         permissions: list[str] = None,
-        expires_delta: Optional[timedelta] = None
+        expires_delta: Optional[timedelta] = None,
+        **kwargs  # ← Buraya eklenen **kwargs, auth.py'den gelen fazlalık parametreleri yutar
     ) -> str:
         """Access token oluştur"""
         if expires_delta is None:
+            # settings import'una göre burayı kontrol et
             expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         
         expire = datetime.now(timezone.utc) + expires_delta
         
         payload = {
-            "sub": subject,  # user_id
+            "sub": subject,
             "tenant_id": tenant_id,
             "role": role,
             "permissions": permissions or [],
@@ -32,6 +34,12 @@ class JWTHandler:
             "iat": datetime.now(timezone.utc),
             "type": "access"
         }
+
+        # Eğer auth.py'den gelen ek bilgileri de token içine gömmek istersen:
+        if "tenant_slug" in kwargs:
+            payload["tenant_slug"] = kwargs["tenant_slug"]
+        if "deployment_type" in kwargs:
+            payload["deployment_type"] = kwargs["deployment_type"]
         
         return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     
@@ -68,13 +76,13 @@ class JWTHandler:
             raise ValueError(f"Token verification failed: {str(e)}")
     
     @staticmethod
-    def refresh_access_token(refresh_token: str) -> tuple[str, str, str, list]:
+    def refresh_access_token(refresh_token: str) -> tuple[str, str]:
         """Refresh token'dan yeni access token üret"""
         payload = JWTHandler.verify_token(refresh_token, "refresh")
         
         return (
             payload["sub"],  # user_id
             payload["tenant_id"],
-            payload["role"],
-            payload.get("permissions", [])
+            # payload["role"],
+            # payload.get("permissions", [])
         )

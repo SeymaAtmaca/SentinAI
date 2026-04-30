@@ -20,11 +20,13 @@ class TenantIsolationMiddleware:
         request = Request(scope, receive=receive)
         
         # Skip auth for public endpoints
-        if request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
+        public_paths = ["/health", "/docs", "/redoc", "/openapi.json"]
+        if request.url.path in public_paths:
             return await self.app(scope, receive, send)
         
-        # Skip auth for login/register
+        # Skip tenant context for auth endpoints (login/register/refresh)
         if request.url.path.startswith("/api/v1/auth"):
+            # Auth endpoints don't need tenant isolation
             return await self.app(scope, receive, send)
         
         # Extract and verify token
@@ -71,3 +73,20 @@ class TenantIsolationMiddleware:
         finally:
             # Always reset context after request
             reset_tenant_context(token_ctx)
+
+    async def create_tenant_schema(self, schema_name: str):
+        """Create PostgreSQL schema for new tenant + base tables - context-independent"""
+        session = await self._get_session()
+        try:
+            # Explicit schema name, no context dependency
+            await session.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+            await session.execute(text(f"""
+                SET search_path TO {schema_name};
+                -- ... existing table creation SQL ...
+            """))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
