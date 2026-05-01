@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 from src.infrastructure.security.tenant.isolation_middleware import TenantIsolationMiddleware
-from src.presentation.api.v1.routes import auth, tenants, test, guard
+from src.presentation.api.v1.routes import auth, tenants, test, guard, approvals
 from src.infrastructure.config.settings import settings
 # from src.core.container import Container
 
@@ -84,6 +84,7 @@ app.include_router(test.router, prefix=settings.API_V1_PREFIX)
 # app.include_router(tenants.router, prefix=settings.API_V1_PREFIX)
 # app.include_router(models.router, prefix=settings.API_V1_PREFIX)
 app.include_router(guard.router, prefix=settings.API_V1_PREFIX)
+app.include_router(approvals.router, prefix=settings.API_V1_PREFIX)
 
 
 # Root Endpoint
