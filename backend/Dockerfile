@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
+COPY alembic.ini .
+# COPY migrations/ ./migrations/
 RUN pip install --no-cache-dir --compile --prefix=/install -r requirements.txt
 
 # Runtime stage

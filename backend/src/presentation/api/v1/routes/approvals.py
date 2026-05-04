@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from datetime import datetime
 import uuid
+from src.infrastructure.messaging.websocket_manager import websocket_manager
 
 from src.infrastructure.security.tenant.context import get_tenant_context, TenantContext
 from src.infrastructure.security.rbac.guards import require_permission, Permission
@@ -200,6 +201,17 @@ async def approve_request(
             )
         
         await session.commit()
+
+        background_tasks.add_task(
+            websocket_manager.notify_approval_updated,
+            tenant_id=ctx.tenant_id,
+            approval={
+                "id": approval_id,
+                "action_type": row[2],  # action_type from RETURNING clause
+                "status": "approved",
+                "decided_at": datetime.now().isoformat()
+            }
+        )
         
         # 2. Background task: Execute the original action
         # TODO: Action execution logic (AI agent'a callback)

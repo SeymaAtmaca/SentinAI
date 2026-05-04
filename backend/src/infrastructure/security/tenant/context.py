@@ -17,21 +17,21 @@ class TenantContext:
     deployment_type: str = "cloud"
 
 # Context variable for async-safe storage
-_tenant_ctx: contextvars.ContextVar[Optional[TenantContext]] = contextvars.ContextVar(
-    "tenant_ctx", default=None
+tenant_context_var: contextvars.ContextVar[Optional[TenantContext]] = contextvars.ContextVar(
+    "tenant_context", default=None
 )
 
 def get_tenant_context() -> TenantContext:
     """Mevcut request'in tenant context'ini al"""
-    ctx = _tenant_ctx.get()
+    ctx = tenant_context_var.get()
     if ctx is None:
         raise RuntimeError("Tenant context not set. Middleware not executed.")
     return ctx
 
 def set_tenant_context(ctx: TenantContext) -> contextvars.Token:
     """Tenant context'i ayarla ve token döndür (reset için)"""
-    return _tenant_ctx.set(ctx)
+    return tenant_context_var.set(ctx)
 
 def reset_tenant_context(token: contextvars.Token):
     """Context'i eski haline döndür"""
-    _tenant_ctx.reset(token)
+    tenant_context_var.reset(token)

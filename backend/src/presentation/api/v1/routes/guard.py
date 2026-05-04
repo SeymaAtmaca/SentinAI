@@ -3,6 +3,8 @@ Guardian Gateway: AI Agent Action Interception
 PDF Reference: "Human-in-the-Loop Approval System Architecture"
 """
 
+import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any, List
@@ -27,6 +29,7 @@ from src.infrastructure.adapters.repositories.postgres_approval_repository impor
 
 # Use case (Manuel injection için)
 from src.application.use_cases.intercept_action.intercept_action_use_case import InterceptActionUseCase
+from src.infrastructure.messaging.websocket_manager import websocket_manager
 
 router = APIRouter(prefix="/guard", tags=["Guardian"])
 logger = logging.getLogger(__name__)
@@ -97,10 +100,24 @@ async def intercept_action(
     # 3. Eğer PENDING_APPROVAL ise, WebSocket notification (simülasyon)
     if result.status == ActionStatus.PENDING_APPROVAL:
         background_tasks.add_task(
-            send_approval_notification,
+            websocket_manager.notify_approval_created,
             tenant_id=ctx.tenant_id,
-            action_id=result.action_id,
-            risk_score=result.risk_score
+            approval={
+                "id": result.action_id,
+                "action_type": request.action_type,
+                "risk_score": result.risk_score,
+                "created_at": datetime.now().isoformat()
+            }
+    )
+    elif result.status == ActionStatus.BLOCKED:
+        background_tasks.add_task(
+            websocket_manager.notify_high_risk_blocked,
+            tenant_id=ctx.tenant_id,
+            action={
+                "action_id": result.action_id,
+                "action_type": request.action_type,
+                "risk_score": result.risk_score
+            }
         )
     
     # 4. Response oluştur

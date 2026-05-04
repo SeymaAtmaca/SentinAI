@@ -5,6 +5,7 @@ import logging
 from src.infrastructure.security.tenant.isolation_middleware import TenantIsolationMiddleware
 from src.presentation.api.v1.routes import auth, tenants, test, guard, approvals
 from src.infrastructure.config.settings import settings
+from src.infrastructure.messaging.websocket_manager import websocket_manager
 # from src.core.container import Container
 
 # container = Container()
@@ -36,6 +37,9 @@ async def lifespan(app: FastAPI):
     
     # Initialize database connections, Kafka, etc.
     # TODO: Add initialization logic
+
+    # app.mount("/ws", websocket_manager.get_asgi_app())
+    logger.info("🔌 WebSocket mounted at /ws → clients connect to http://host:port/ws")
     
     yield
     
@@ -62,6 +66,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/ws", websocket_manager.get_asgi_app())
+
 
 # Register Tenant Isolation Middleware
 app.add_middleware(TenantIsolationMiddleware)

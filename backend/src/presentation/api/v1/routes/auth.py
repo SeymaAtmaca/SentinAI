@@ -9,6 +9,12 @@ from src.infrastructure.security.auth.jwt_handler import JWTHandler
 from src.infrastructure.security.auth.password_hasher import PasswordHasher
 from src.domain.entities.user import User, Role
 from src.infrastructure.adapters.repositories.postgres_user_repository import PostgresUserRepository
+from src.presentation.api.v1.schemas.auth import (
+    LoginRequest, LoginResponse,
+    RegisterRequest, RegisterResponse,
+    RefreshTokenRequest, TokenResponse,
+    ErrorResponse
+)
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -46,18 +52,21 @@ class TokenRefreshResponse(BaseModel):
 
 # ================= ENDPOINTS =================
 
-@router.post("/login", response_model=LoginResponse)
-async def login(req: LoginRequest, user_repo: PostgresUserRepository = Depends()):
+@router.post("/login", response_model=LoginResponse, responses={
+    400: {"model": ErrorResponse},
+    401: {"model": ErrorResponse}
+})
+async def login(request: LoginRequest, user_repo: PostgresUserRepository = Depends()):
     """Kullanıcı girişi - JWT token çifti döndürür"""
     
     # 1. User'ı public schema'da bul (tenant henüz bilinmiyor)
-    user = await user_repo.get_by_email(req.email, tenant_id=None)
+    user = await user_repo.get_by_email(request.email, tenant_id=None)
     
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # 2. Password'u doğrula
-    if not PasswordHasher.verify(req.password, user.password_hash):
+    if not PasswordHasher.verify(request.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # 3. Account status kontrolü

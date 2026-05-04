@@ -37,3 +37,9 @@ black==24.1.1
 ruff==0.1.11
 
 dependency-injector==4.41.0
+
+# WebSocket Support
+python-socketio[asyncio]==5.11.2
+aiohttp==3.10.5
+aiofiles==23.2.1
+websocket-client==1.7.0
